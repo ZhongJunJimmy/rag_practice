@@ -1,0 +1,10 @@
+{
+  "OLLAMA_HOST": "http://127.0.0.1:11434",
+  "DATA_DIR": "data",
+  "CACHE_PATH": "cache/embeddings.json",
+  "EMBED_MODEL": "nomic-embed-text",
+  "CHAT_MODEL": "qwen3:4b",
+  "MAX_CHARS": 800,
+  "TOP_K_RETRIEVE": 8,
+  "TOP_K_FINAL": 3
+}
