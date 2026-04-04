@@ -24,6 +24,7 @@
 
 ```
 rag_project/
+├── .gitignore            # Git 忽略文件
 ├── app.py                 # FastAPI 主應用程式
 ├── libs/
 │   ├── config.py         # 配置管理
