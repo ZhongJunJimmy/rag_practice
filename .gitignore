@@ -8,6 +8,16 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+
+# Environment variables
+.env
+
+# Cache and runtime data
+cache/
+*.log
+
+# Environment variables
+.env
 build/
 develop-eggs/
 dist/

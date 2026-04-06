@@ -2,18 +2,16 @@
 答案生成相關函數
 """
 from typing import Any, Dict, List
-from ollama import Client
 
-from libs.config import CHAT_MODEL, OLLAMA_HOST
-
-client = Client(host=OLLAMA_HOST)
+from libs.config import CHAT_MODEL
+from libs.ollama_client import client
 
 
 def build_answer_prompt(query: str, docs: List[Dict[str, Any]]) -> str:
     """構建答案生成的提示詞"""
     context = "\n\n".join(
         [
-            f"[source={d['source']} | chunk_id={d['chunk_id']} | path={d['path']}]\n{d['text']}"
+            f"[source={d['source']} | chunk_id={d['chunk_id']} | path={d['file_path']}]\n{d['text']}"
             for d in docs
         ]
     )

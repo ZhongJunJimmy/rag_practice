@@ -2,9 +2,11 @@
   "OLLAMA_HOST": "http://127.0.0.1:11434",
   "DATA_DIR": "data",
   "CACHE_PATH": "cache/embeddings.json",
-  "EMBED_MODEL": "nomic-embed-text",
-  "CHAT_MODEL": "qwen3:4b",
+  "EMBED_MODEL": "embeddinggemma",
+  "CHAT_MODEL": "gemma4:31b",
   "MAX_CHARS": 800,
   "TOP_K_RETRIEVE": 8,
-  "TOP_K_FINAL": 3
+  "TOP_K_FINAL": 3,
+  "PG_DSN": "postgresql://rag_user:rag_password@localhost:5432/rag_db",
+  "VECTOR_DIM": 768
 }

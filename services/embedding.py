@@ -6,16 +6,14 @@ from typing import Any, Dict, List
 import json
 
 import numpy as np
-from ollama import Client
 
-from libs.config import EMBED_MODEL, OLLAMA_HOST
-
-client = Client(host=OLLAMA_HOST)
+from libs.config import EMBED_MODEL
+from libs.ollama_client import embedd_client
 
 
 def embed_text(text: str) -> np.ndarray:
     """使用 Ollama 生成嵌入向量"""
-    response = client.embed(model=EMBED_MODEL, input=text)
+    response = embedd_client.embed(model=EMBED_MODEL, input=text)
     return np.array(response["embeddings"][0], dtype=np.float32)
 
 

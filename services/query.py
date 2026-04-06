@@ -2,11 +2,9 @@
 查詢改寫相關函數 (Query Rewrite / HyDE)
 """
 from typing import Literal
-from ollama import Client
 
-from libs.config import CHAT_MODEL, OLLAMA_HOST
-
-client = Client(host=OLLAMA_HOST)
+from libs.config import CHAT_MODEL
+from libs.ollama_client import client
 
 
 def rewrite_query(query: str) -> str:

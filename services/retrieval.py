@@ -4,12 +4,10 @@
 from typing import Any, Dict, List
 import re
 import numpy as np
-from ollama import Client
 
-from libs.config import CHAT_MODEL, OLLAMA_HOST, TOP_K_RETRIEVE, TOP_K_FINAL
+from libs.config import CHAT_MODEL, TOP_K_RETRIEVE, TOP_K_FINAL
+from libs.ollama_client import client
 from .embedding import cosine_similarity, embed_text
-
-client = Client(host=OLLAMA_HOST)
 
 
 def retrieve(search_query: str, index: List[Dict[str, Any]], top_k: int = TOP_K_RETRIEVE) -> List[Dict[str, Any]]:
