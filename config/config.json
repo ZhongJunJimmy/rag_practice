@@ -1,5 +1,5 @@
 {
-  "OLLAMA_HOST": "http://127.0.0.1:11434",
+  "OLLAMA_HOST": "http://host.docker.internal:11434",
   "DATA_DIR": "data",
   "CACHE_PATH": "cache/embeddings.json",
   "EMBED_MODEL": "embeddinggemma",
@@ -7,6 +7,6 @@
   "MAX_CHARS": 800,
   "TOP_K_RETRIEVE": 8,
   "TOP_K_FINAL": 3,
-  "PG_DSN": "postgresql://rag_user:rag_password@localhost:5432/rag_db",
+  "PG_DSN": "postgresql://rag_user:rag_password@host.docker.internal:5432/rag_db",
   "VECTOR_DIM": 768
 }

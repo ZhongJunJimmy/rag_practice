@@ -23,7 +23,6 @@ def build_answer_prompt(query: str, docs: List[Dict[str, Any]]) -> str:
 2. 若資料不足，明確回答「資料不足，無法確認」
 3. 不要自行補充參考資料沒有的事實
 4. 使用繁體中文
-5. 可簡短引用 chunk_id
 
 【參考資料】
 {context}
