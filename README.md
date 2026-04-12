@@ -213,10 +213,6 @@ Content-Type: application/json
 
 Roadmap 包含 5 個階段的 15 項改進計劃，從 Retrieval 強化到完整的 Agentic 系統。
 
-## 貢獻
-
-歡迎提交 Issue 和 Pull Request！
-
 ## 授權
 
 MIT License
