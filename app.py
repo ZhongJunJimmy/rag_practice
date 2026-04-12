@@ -4,7 +4,8 @@ FastAPI 應用程式 - 本地 RAG API
 from pathlib import Path
 from typing import Any, Dict, List, Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from libs.config import DATA_DIR, TOP_K_RETRIEVE, TOP_K_FINAL
@@ -20,8 +21,11 @@ from services.storage import (
     search_similar_chunks,
 )
 import hashlib
+import shutil
+import os
 
-from libs.config import DATA_DIR
+UPLOAD_DIR = DATA_DIR
+ALLOWED_EXT = [".pdf", ".md"]
 
 def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -140,3 +144,20 @@ def reindex():
                 print(f"[INSERT] new chunk: {chunk['chunk_id']}")
 
     return {"status": "ok", "total": total, "inserted_or_updated": inserted_or_updated, "skipped": skipped}
+
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_EXT:
+        return {"error": "Invalid file type"}
+    
+    file_path = os.path.join(UPLOAD_DIR, file.filename)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    return JSONResponse({
+        "filename": file.filename,
+        "content_type": file.content_type,
+        "saved_path": file_path
+    })
