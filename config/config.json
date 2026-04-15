@@ -2,7 +2,7 @@
   "OLLAMA_HOST": "http://127.0.0.1:11434",
   "DATA_DIR": "data",
   "CACHE_PATH": "cache/embeddings.json",
-  "EMBED_MODEL": "embeddinggemma",
+  "EMBED_MODEL": "embeddinggemma:300m-qat-q8_0",
   "CHAT_MODEL": "gemma4:31b",
   "MAX_CHARS": 800,
   "TOP_K_RETRIEVE": 8,

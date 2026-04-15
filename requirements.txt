@@ -7,3 +7,5 @@ python-dotenv>=1.0.0
 psycopg-pool>=3.1.0
 psycopg>=3.1.0
 pgvector>=0.2.0
+python-multipart>=0.0.5
+PyPDF2>=3.0.0

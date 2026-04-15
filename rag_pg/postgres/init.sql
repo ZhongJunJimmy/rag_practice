@@ -21,6 +21,7 @@ CREATE TABLE chunks (
     text TEXT NOT NULL,
     text_hash TEXT NOT NULL,
     embedding VECTOR(768), -- 依你的 embedding model 維度調整
+    parent_id BIGINT REFERENCES chunks(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (document_id, chunk_id)
