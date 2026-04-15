@@ -27,12 +27,21 @@ def upsert_chunk_with_embedding(document_id: int, chunk: dict, embedding: list[f
     conn = get_conn()
     try:
         with conn.cursor() as cur:
+            # Resolve parent_id if this is a child chunk
+            parent_id = None
+            parent_chunk_id = chunk.get("parent_chunk_id")
+            if parent_chunk_id:
+                cur.execute("SELECT id FROM chunks WHERE document_id = %s AND chunk_id = %s", (document_id, parent_chunk_id))
+                row = cur.fetchone()
+                if row:
+                    parent_id = row[0]
+
             cur.execute("""
                 INSERT INTO chunks (
                     document_id, chunk_id, title, level, heading_path,
-                    part, text, text_hash, embedding
+                    part, text, text_hash, embedding, parent_id
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (document_id, chunk_id)
                 DO UPDATE SET
                     title = EXCLUDED.title,
@@ -42,6 +51,7 @@ def upsert_chunk_with_embedding(document_id: int, chunk: dict, embedding: list[f
                     text = EXCLUDED.text,
                     text_hash = EXCLUDED.text_hash,
                     embedding = EXCLUDED.embedding,
+                    parent_id = EXCLUDED.parent_id,
                     updated_at = NOW()
             """, (
                 document_id,
@@ -53,6 +63,7 @@ def upsert_chunk_with_embedding(document_id: int, chunk: dict, embedding: list[f
                 chunk["text"],
                 text_hash,
                 embedding,
+                parent_id,
             ))
     finally:
         put_conn(conn)
@@ -61,12 +72,21 @@ def upsert_chunk(document_id: int, chunk: dict, embedding: list[float]):
     conn = get_conn()
     try:
         with conn.cursor() as cur:
+            # Resolve parent_id if this is a child chunk
+            parent_id = None
+            parent_chunk_id = chunk.get("parent_chunk_id")
+            if parent_chunk_id:
+                cur.execute("SELECT id FROM chunks WHERE document_id = %s AND chunk_id = %s", (document_id, parent_chunk_id))
+                row = cur.fetchone()
+                if row:
+                    parent_id = row[0]
+
             cur.execute("""
                 INSERT INTO chunks (
                     document_id, chunk_id, title, level, heading_path,
-                    part, text, text_hash, embedding
+                    part, text, text_hash, embedding, parent_id
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (document_id, chunk_id)
                 DO UPDATE SET
                     title = EXCLUDED.title,
@@ -76,6 +96,7 @@ def upsert_chunk(document_id: int, chunk: dict, embedding: list[float]):
                     text = EXCLUDED.text,
                     text_hash = EXCLUDED.text_hash,
                     embedding = EXCLUDED.embedding,
+                    parent_id = EXCLUDED.parent_id,
                     updated_at = NOW()
             """, (
                 document_id,
@@ -86,7 +107,8 @@ def upsert_chunk(document_id: int, chunk: dict, embedding: list[float]):
                 chunk.get("part", 1),
                 chunk["text"],
                 sha256_text(chunk["text"]),
-                embedding
+                embedding,
+                parent_id,
             ))
     finally:
         put_conn(conn)
@@ -100,28 +122,56 @@ def count_chunks() -> int:
     finally:
         put_conn(conn)
 
-def search_similar_chunks(query_embedding: list[float], top_k: int = 5):
+def search_similar_chunks(query_text: str, query_embedding: list[float], top_k: int = 5):
     conn = get_conn()
     try:
         with conn.cursor() as cur:
+            # 使用 Hybrid Search: 結合 pgvector 語意搜尋與 PostgreSQL Full Text Search (Keyword)
+            # 我們使用 websearch_to_tsquery 以支援更靈活的關鍵字查詢 (類似 Google 搜尋)
+            # 由於沒有預先建立 tsvector 索引，這裡在查詢時動態產生，適用於中小型數據集
             cur.execute("""
-                SELECT
+                WITH semantic_search AS (
+                    SELECT 
+                        c.id, 
+                        1 - (c.embedding <=> %s::vector) AS score
+                    FROM chunks c
+                    WHERE c.embedding IS NOT NULL
+                    ORDER BY c.embedding <=> %s::vector
+                    LIMIT %s
+                ),
+                keyword_search AS (
+                    SELECT 
+                        c.id, 
+                        ts_rank(to_tsvector('english', c.text), websearch_to_tsquery('english', %s)) AS score
+                    FROM chunks c
+                    WHERE to_tsvector('english', c.text) @@ websearch_to_tsquery('english', %s)
+                    ORDER BY score DESC
+                    LIMIT %s
+                ),
+                combined AS (
+                    SELECT id, score FROM semantic_search
+                    UNION ALL
+                    SELECT id, score FROM keyword_search
+                )
+                SELECT 
                     c.id,
                     c.chunk_id,
                     c.title,
                     c.level,
                     c.heading_path,
                     c.part,
-                    c.text,
+                    COALESCE(p.text, c.text) as text,
                     d.source_name,
                     d.file_path,
-                    1 - (c.embedding <=> %s::vector) AS score
-                FROM chunks c
+                    MAX(comb.score) as score
+                FROM combined comb
+                JOIN chunks c ON comb.id = c.id
+                LEFT JOIN chunks p ON c.parent_id = p.id
                 JOIN documents d ON c.document_id = d.id
-                WHERE c.embedding IS NOT NULL
-                ORDER BY c.embedding <=> %s::vector
+                GROUP BY c.id, c.chunk_id, c.title, c.level, c.heading_path, c.part, p.text, c.text, d.source_name, d.file_path
+                ORDER BY score DESC
                 LIMIT %s
-            """, (query_embedding, query_embedding, top_k))
+            """, (query_embedding, query_embedding, top_k * 2, query_text, query_text, top_k * 2, top_k))
 
             rows = cur.fetchall()
 

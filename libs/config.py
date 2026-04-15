@@ -22,6 +22,7 @@ if not OLLAMA_HOST:
     raise RuntimeError("OLLAMA_HOST is not set in config.json.")
 
 DATA_DIR = Path(CONFIG.get("DATA_DIR", "data"))
+# ALLOWED_EXT=Path(CONFIG.get("ALLOWED_EXT", [".pdf", ".md"]))
 CACHE_PATH = Path(CONFIG.get("CACHE_PATH", "cache/embeddings.json"))
 
 EMBED_MODEL = CONFIG.get("EMBED_MODEL", "nomic-embed-text")

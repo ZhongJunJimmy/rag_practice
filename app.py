@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from libs.config import DATA_DIR, TOP_K_RETRIEVE, TOP_K_FINAL
-from services.chunking import load_all_markdown_files
+from services.chunking import load_all_files
 from services.query import build_search_query
 from services.retrieval import rerank
 from services.answer import answer_question
@@ -71,16 +71,30 @@ def health():
 
 @app.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest):
-    search_query = build_search_query(req.query, req.mode)
-    query_embedding = embed_text(search_query)
-    retrieved = search_similar_chunks(query_embedding, top_k=TOP_K_RETRIEVE)
-    reranked = rerank(req.query, retrieved, top_k=TOP_K_FINAL)
+    search_queries = build_search_query(req.query, req.mode)
+    
+    # 針對每個改寫後的查詢進行檢索並聚合結果
+    all_retrieved = []
+    for sq in search_queries:
+        q_emb = embed_text(sq)
+        res = search_similar_chunks(sq, q_emb, top_k=TOP_K_RETRIEVE)
+        all_retrieved.extend(res)
+    
+    # 根據 chunk_id 去重 (保留第一次出現的結果)
+    seen_ids = set()
+    unique_retrieved = []
+    for item in all_retrieved:
+        if item["chunk_id"] not in seen_ids:
+            unique_retrieved.append(item)
+            seen_ids.add(item["chunk_id"])
+            
+    reranked = rerank(req.query, unique_retrieved, top_k=TOP_K_FINAL)
     answer = answer_question(req.query, reranked)
 
     return AskResponse(
         query=req.query,
         mode=req.mode,
-        search_query=search_query,
+        search_query="\n".join(search_queries),
         retrieved=[
             RetrievedChunk(
                 chunk_id=x["chunk_id"],
@@ -88,7 +102,7 @@ def ask(req: AskRequest):
                 path=x["file_path"],
                 score=float(x["score"]),
             )
-            for x in retrieved
+            for x in unique_retrieved
         ],
         reranked=[
             RetrievedChunk(
@@ -104,7 +118,7 @@ def ask(req: AskRequest):
 
 @app.post("/reindex")
 def reindex():
-    chunks = load_all_markdown_files(DATA_DIR)
+    chunks = load_all_files(DATA_DIR)
     grouped = {}
     for chunk in chunks:
         grouped.setdefault(chunk["source"], []).append(chunk)
@@ -134,7 +148,7 @@ def reindex():
                 print(f"[SKIP] unchanged chunk: {chunk['chunk_id']}")
                 continue
 
-            emb = embed_text(chunk["text"])
+            emb = embed_text(chunk["text"]) if not chunk.get("is_parent") else None
             upsert_chunk_with_embedding(doc_id, chunk, emb, text_hash)
 
             inserted_or_updated += 1

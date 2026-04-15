@@ -5,7 +5,7 @@ except ImportError:
 
 setup_path()
 
-from services.chunking import load_all_markdown_files
+from services.chunking import load_all_files
 from services.embedding import embed_text
 from services.storage import (
     upsert_document,
@@ -21,7 +21,7 @@ def sha256_text(text: str) -> str:
 
 
 def main():
-    chunks = load_all_markdown_files(DATA_DIR)
+    chunks = load_all_files(DATA_DIR)
 
     grouped = {}
     for chunk in chunks:
@@ -52,7 +52,7 @@ def main():
                 print(f"[SKIP] unchanged chunk: {chunk['chunk_id']}")
                 continue
 
-            emb = embed_text(chunk["text"])
+            emb = embed_text(chunk["text"]) if not chunk.get("is_parent") else None
             upsert_chunk_with_embedding(doc_id, chunk, emb, text_hash)
 
             inserted_or_updated += 1
