@@ -4,6 +4,7 @@
 from typing import Any, Dict, List
 import re
 import numpy as np
+import time
 
 from libs.config import CHAT_MODEL, TOP_K_RETRIEVE, TOP_K_FINAL
 from libs.ollama_client import client
@@ -40,10 +41,13 @@ def rerank(query: str, candidates: List[Dict[str, Any]], top_k: int = TOP_K_FINA
 {item['text']}
 """.strip()
 
+        start_time = time.time()
         res = client.chat(
             model=CHAT_MODEL,
             messages=[{"role": "user", "content": prompt}],
         )
+        end_time = time.time()
+        print(f"執行rerank時間: {end_time - start_time} 秒")
         raw = res["message"]["content"].strip()
 
         m = re.search(r"\d+", raw)
