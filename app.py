@@ -19,6 +19,14 @@ from services.storage import (
     get_existing_chunk_state,
     upsert_chunk_with_embedding,
     search_similar_chunks,
+    add_user,
+    delete_user,
+    get_all_users,
+    add_group,
+    update_group,
+    get_group,
+    get_all_groups,
+    delete_group,
 )
 import hashlib
 import shutil
@@ -40,6 +48,20 @@ app = FastAPI(title="Local RAG API")
 class AskRequest(BaseModel):
     query: str
     mode: Literal["none", "rewrite", "hyde"] = "none"
+    user_id: str = None
+
+class UserRequest(BaseModel):
+    user_id: str
+    username: str
+
+class GroupRequest(BaseModel):
+    group_id: str
+    group_name: str
+    users_id: List[str]
+
+class DocumentGroupRequest(BaseModel):
+    source_name: str
+    groups: List[str]
 
 
 class RetrievedChunk(BaseModel):
@@ -77,7 +99,7 @@ def ask(req: AskRequest):
     all_retrieved = []
     for sq in search_queries:
         q_emb = embed_text(sq)
-        res = search_similar_chunks(sq, q_emb, top_k=TOP_K_RETRIEVE)
+        res = search_similar_chunks(sq, q_emb, top_k=TOP_K_RETRIEVE, user_id=req.user_id)
         all_retrieved.extend(res)
     
     # 根據 chunk_id 去重 (保留第一次出現的結果)
@@ -162,7 +184,9 @@ def reindex():
 @app.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
-    filename: str = Form(...)):
+    filename: str = Form(...),
+    password: str = Form(None),
+    user_id: str = Form(None)):
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ALLOWED_EXT:
         return {"error": "Invalid file type"}
@@ -173,8 +197,103 @@ async def upload_file(
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
+    # Calculate file hash for document tracking
+    with open(file_path, "rb") as f:
+        file_bytes = f.read()
+        content_hash = hashlib.sha256(file_bytes).hexdigest()
+
+    # Store document, password, and user in DB
+    upsert_document(
+        source_name=filename,
+        file_path=file_path,
+        content_hash=content_hash,
+        password=password,
+        update_user_id=user_id
+    )
+
     return JSONResponse({
         "filename": filename,
         "content_type": file.content_type,
-        "saved_path": file_path
+        "saved_path": file_path,
+        "password_stored": password is not None,
+        "user_id_stored": user_id is not None
     })
+
+@app.post("/addUser")
+def add_user_api(req: UserRequest):
+    print(f"Attempting to add user: {req.user_id} ({req.username})")
+    success = add_user(req.user_id, req.username)
+    if success:
+        return {"status": "ok", "message": f"User {req.user_id} added successfully"}
+    else:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "User already exists or could not be added"})
+
+@app.post("/delUser")
+def del_user_api(req: UserRequest):
+    success = delete_user(req.user_id)
+    if success:
+        return {"status": "ok", "message": f"User {req.user_id} deleted successfully"}
+    else:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "User not found or could not be deleted"})
+
+@app.get("/getUsers")
+async def list_users_api():
+    print("Fetching all users...")
+    success, users = get_all_users()
+    print(f"Retrieved users: {users}")
+    if success:
+        return {"status": "ok", "users": users}
+    else:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Could not retrieve users"})
+
+@app.post("/addGroup")
+def add_group_api(req: GroupRequest):
+    success = add_group(req.group_id, req.group_name, req.users_id)
+    if success:
+        return {"status": "ok", "message": f"Group {req.group_id} added successfully"}
+    else:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Could not add group"})
+
+@app.put("/updateGroup")
+def update_group_api(req: GroupRequest):
+    success = update_group(req.group_id, req.group_name, req.users_id)
+    if success:
+        return {"status": "ok", "message": f"Group {req.group_id} updated successfully"}
+    else:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Group not found or could not be updated"})
+
+@app.get("/getGroup")
+def get_group_api(group_id: str):
+    success, group = get_group(group_id)
+    if success and group:
+        return {"status": "ok", "group": group}
+    elif success:
+        return JSONResponse(status_code=404, content={"status": "error", "message": "Group not found"})
+    else:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Could not retrieve group"})
+
+@app.get("/getGroups")
+def get_all_groups_api():
+    success, groups = get_all_groups()
+    if success:
+        return {"status": "ok", "groups": groups}
+    else:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Could not retrieve groups"})
+
+@app.delete("/delGroup")
+def del_group_api(group_id: str):
+    success = delete_group(group_id)
+    if success:
+        return {"status": "ok", "message": f"Group {group_id} deleted successfully"}
+    else:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Group not found or could not be deleted"})
+
+from services.storage import update_document_groups
+
+@app.put("/updateDocumentGroups")
+def update_doc_groups_api(req: DocumentGroupRequest):
+    success = update_document_groups(req.source_name, req.groups)
+    if success:
+        return {"status": "ok", "message": f"Groups for document {req.source_name} updated successfully"}
+    else:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Document not found or could not update groups"})

@@ -5,6 +5,9 @@ CREATE TABLE documents (
     source_name TEXT NOT NULL,
     file_path TEXT,
     content_hash TEXT NOT NULL,
+    password TEXT,
+    update_user_id TEXT,
+    groups TEXT[] DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (source_name)
@@ -25,4 +28,17 @@ CREATE TABLE chunks (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (document_id, chunk_id)
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    user_id TEXT PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS groups (
+    group_id TEXT PRIMARY KEY,
+    group_name TEXT NOT NULL,
+    users_id TEXT[],
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

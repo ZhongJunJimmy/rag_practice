@@ -9,6 +9,7 @@ import fitz
 from libs.config import MAX_CHARS
 from libs.utils import normalize_text, split_paragraphs
 from libs.processors import get_processor
+from services.storage import get_document_password
 
 
 def chunk_markdown_by_heading(md_text: str) -> List[Dict[str, Any]]:
@@ -123,11 +124,12 @@ def is_pdf_heading(line: str) -> bool:
     return False
 
 
-def chunk_pdf_file(pdf_path: Path) -> List[Dict[str, Any]]:
+def chunk_pdf_file(pdf_path: Path, password: str = None) -> List[Dict[str, Any]]:
     """參考 pdf_chunking.py 的流程處理 PDF 分塊"""
     try:
         doc = fitz.open(pdf_path)
-        doc.authenticate('YOUR_PASSWROD')
+        if password:
+            doc.authenticate(password)
     except Exception as e:
         print(f"無法開啟 PDF {pdf_path}: {e}")
         return []
@@ -295,7 +297,8 @@ def load_all_files(data_dir: Path) -> List[Dict[str, Any]]:
     for file_path in sorted(files):
         if file_path.suffix.lower() == ".pdf":
             # 使用專門的 PDF 分塊流程
-            all_chunks.extend(chunk_pdf_file(file_path))
+            password = get_document_password(file_path.name)
+            all_chunks.extend(chunk_pdf_file(file_path, password=password))
         else:
             processor = get_processor(file_path)
             if processor:
