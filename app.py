@@ -139,6 +139,7 @@ def ask(req: AskRequest):
 @app.post("/mode", response_model=ModeRequest)
 def set_mode(req: ModeRequest):
     # 這裡可以實現模式切換的邏輯，例如存儲在全局變量中
+    global current_mode
     current_mode = req.mode
     return {"status": "ok", "mode": current_mode}
 
