@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Literal
 
 from fastapi import FastAPI
 from pydantic import BaseModel
+from datetime import datetime
 
 from libs.config import DATA_DIR, TOP_K_RETRIEVE, TOP_K_FINAL
 from services.chunking import load_all_files
@@ -19,6 +20,7 @@ from services.storage import (
     upsert_chunk_with_embedding,
     search_similar_chunks,
 )
+from services.web_search import run_agent
 import hashlib
 
 from libs.config import DATA_DIR
@@ -28,6 +30,9 @@ def sha256_text(text: str) -> str:
 
 
 app = FastAPI(title="Local RAG API")
+global current_mode
+current_mode = "chunk"
+
 
 
 # =========================
@@ -53,6 +58,8 @@ class AskResponse(BaseModel):
     reranked: List[RetrievedChunk]
     answer: str
 
+class ModeRequest(BaseModel):
+    mode: Literal["chunk", "webSearch"]
 
 # =========================
 # Startup
@@ -68,49 +75,68 @@ def health():
 @app.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest):
     search_queries = build_search_query(req.query, req.mode)
-    
-    # 針對每個改寫後的查詢進行檢索並聚合結果
-    all_retrieved = []
-    for sq in search_queries:
-        q_emb = embed_text(sq)
-        res = search_similar_chunks(sq, q_emb, top_k=TOP_K_RETRIEVE)
-        all_retrieved.extend(res)
-    
-    # 根據 chunk_id 去重 (保留第一次出現的結果)
-    seen_ids = set()
-    unique_retrieved = []
-    for item in all_retrieved:
-        if item["chunk_id"] not in seen_ids:
-            unique_retrieved.append(item)
-            seen_ids.add(item["chunk_id"])
-            
-    reranked = rerank(req.query, unique_retrieved, top_k=TOP_K_FINAL)
-    answer = answer_question(req.query, reranked)
 
-    return AskResponse(
-        query=req.query,
-        mode=req.mode,
-        search_query="\n".join(search_queries),
-        retrieved=[
-            RetrievedChunk(
-                chunk_id=x["chunk_id"],
-                source=x["source"],
-                path=x["file_path"],
-                score=float(x["score"]),
-            )
-            for x in unique_retrieved
-        ],
-        reranked=[
-            RetrievedChunk(
-                chunk_id=x["chunk_id"],
-                source=x["source"],
-                path=x["file_path"],
-                score=float(x["score"]),
-            )
-            for x in reranked
-        ],
-        answer=answer,
-    )
+    if current_mode == "chunk":
+        # 針對每個改寫後的查詢進行檢索並聚合結果
+        all_retrieved = []
+        for sq in search_queries:
+            q_emb = embed_text(sq)
+            res = search_similar_chunks(sq, q_emb, top_k=TOP_K_RETRIEVE)
+            all_retrieved.extend(res)
+        
+        # 根據 chunk_id 去重 (保留第一次出現的結果)
+        seen_ids = set()
+        unique_retrieved = []
+        for item in all_retrieved:
+            if item["chunk_id"] not in seen_ids:
+                unique_retrieved.append(item)
+                seen_ids.add(item["chunk_id"])
+                
+        reranked = rerank(req.query, unique_retrieved, top_k=TOP_K_FINAL)
+        answer = answer_question(req.query, reranked)
+
+        return AskResponse(
+            query=req.query,
+            mode=req.mode,
+            search_query="\n".join(search_queries),
+            retrieved=[
+                RetrievedChunk(
+                    chunk_id=x["chunk_id"],
+                    source=x["source"],
+                    path=x["file_path"],
+                    score=float(x["score"]),
+                )
+                for x in unique_retrieved
+            ],
+            reranked=[
+                RetrievedChunk(
+                    chunk_id=x["chunk_id"],
+                    source=x["source"],
+                    path=x["file_path"],
+                    score=float(x["score"]),
+                )
+                for x in reranked
+            ],
+            answer=answer,
+        )
+    else:
+        now = datetime.now()
+        user_question = "\n".join(search_queries)+f" (asked at {now.strftime('%Y-%m-%d %H:%M:%S')})"
+
+        web_results = run_agent(user_question)
+        return AskResponse(
+            query=req.query,
+            mode=req.mode,
+            search_query=search_queries[0],
+            retrieved=[],  # web search 沒有 chunk_id 等資訊，這裡先留空
+            reranked=[],   # 同上
+            answer=web_results,
+        )
+@app.post("/mode", response_model=ModeRequest)
+def set_mode(req: ModeRequest):
+    # 這裡可以實現模式切換的邏輯，例如存儲在全局變量中
+    current_mode = req.mode
+    return {"status": "ok", "mode": current_mode}
 
 @app.post("/reindex")
 def reindex():

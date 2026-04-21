@@ -1,36 +1,15 @@
-"""
-requirements:
-    pip install -U ollama requests
-
-before run:
-    1. start ollama
-    2. pull a tool-capable model, for example:
-       ollama pull qwen2.5:7b
-       或
-       ollama pull llama3.1:8b
-
-run:
-    python ollama_tool_web_search.py
-"""
-
 from __future__ import annotations
 
 import json
 import time
 from typing import Any, Dict, List
-from dotenv import load_dotenv
-load_dotenv()
 
 import requests
-from ollama import Client
-import os
 from datetime import datetime
 
 
-OLLAMA_HOST = "https://ollama.com"
-OLLAMA_API_KEY=os.environ.get('OLLAMA_API_KEY')  # 替换成你的 API Key
-print(f"Using Ollama API Key: {'set' if OLLAMA_API_KEY else 'not set'}")
-MODEL_NAME = "gemma4:31b"   # 可自行改成你的模型
+from libs.config import CHAT_MODEL
+from libs.ollama_client import client
 SEARCH_TIMEOUT = 15
 
 
@@ -204,10 +183,7 @@ def call_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def run_agent(user_question: str) -> str:
-    client = Client(
-    host="https://ollama.com",
-    headers={'Authorization': 'Bearer ' + OLLAMA_API_KEY},
-)
+
 
     system_prompt = """
 You are a tool-using assistant.
@@ -238,7 +214,7 @@ Do not simulate tool calls in text.
 
     # 第一次讓模型判斷是否要呼叫工具
     response = client.chat(
-        model=MODEL_NAME,
+        model=CHAT_MODEL,
         messages=messages,
         tools=tools,
     )
@@ -271,7 +247,7 @@ Do not simulate tool calls in text.
 
         # 再呼叫一次模型，讓它根據 tool 結果回答
         final_response = client.chat(
-            model=MODEL_NAME,
+            model=CHAT_MODEL,
             messages=messages,
         )
         return final_response["message"]["content"]
@@ -281,7 +257,7 @@ Do not simulate tool calls in text.
 
 
 def main() -> None:
-    print(f"Using model: {MODEL_NAME}")
+    print(f"Using model: {CHAT_MODEL}")
     print("Type 'exit' to quit.\n")
 
     while True:
