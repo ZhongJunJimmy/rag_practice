@@ -4,6 +4,7 @@
 from typing import Any, Dict, List
 import re
 import numpy as np
+import time
 
 from libs.config import CHAT_MODEL, TOP_K_RETRIEVE, TOP_K_FINAL
 from libs.ollama_client import client
