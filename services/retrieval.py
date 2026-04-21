@@ -8,6 +8,7 @@ import numpy as np
 from libs.config import CHAT_MODEL, TOP_K_RETRIEVE, TOP_K_FINAL
 from libs.ollama_client import client
 from .embedding import cosine_similarity, embed_text
+import time
 
 
 def retrieve(search_query: str, index: List[Dict[str, Any]], top_k: int = TOP_K_RETRIEVE) -> List[Dict[str, Any]]:
@@ -39,11 +40,13 @@ def rerank(query: str, candidates: List[Dict[str, Any]], top_k: int = TOP_K_FINA
 【文件片段】
 {item['text']}
 """.strip()
-
+        start_time = time.time()
         res = client.chat(
             model=CHAT_MODEL,
             messages=[{"role": "user", "content": prompt}],
         )
+        end_time = time.time()
+        print(f"執行rerank時間: {end_time - start_time} 秒")
         raw = res["message"]["content"].strip()
 
         m = re.search(r"\d+", raw)
