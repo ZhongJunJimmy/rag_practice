@@ -26,7 +26,8 @@ DATA_DIR = Path(CONFIG.get("DATA_DIR", "data"))
 CACHE_PATH = Path(CONFIG.get("CACHE_PATH", "cache/embeddings.json"))
 
 EMBED_MODEL = CONFIG.get("EMBED_MODEL", "nomic-embed-text")
-CHAT_MODEL = CONFIG.get("CHAT_MODEL", "qwen3:4b")
+MID_CHAT_MODEL = CONFIG.get("MID_CHAT_MODEL", "gemma3:12b")
+CHAT_MODEL = CONFIG.get("CHAT_MODEL", "gemma3:27b")
 
 MAX_CHARS = int(CONFIG.get("MAX_CHARS", 800))
 TOP_K_RETRIEVE = int(CONFIG.get("TOP_K_RETRIEVE", 8))

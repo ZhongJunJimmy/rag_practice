@@ -3,7 +3,7 @@
 """
 from typing import Literal
 
-from libs.config import CHAT_MODEL
+from libs.config import CHAT_MODEL, MID_CHAT_MODEL
 from libs.ollama_client import client
 
 
@@ -22,7 +22,7 @@ def rewrite_query(query: str) -> list[str]:
 """.strip()
 
     res = client.chat(
-        model=CHAT_MODEL,
+        model=MID_CHAT_MODEL,
         messages=[{"role": "user", "content": prompt}],
     )
     content = res["message"]["content"].strip()

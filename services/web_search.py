@@ -13,7 +13,7 @@ from libs.ollama_client import client
 SEARCH_TIMEOUT = 15
 
 
-def web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
+def web_search(query: str, max_results: int = 3) -> Dict[str, Any]:
     """
     使用 DuckDuckGo Instant Answer API + HTML fallback 做簡單搜尋。
     不依賴 Ollama 內建 web search。
@@ -162,7 +162,7 @@ def build_tools() -> List[Dict[str, Any]]:
                         "max_results": {
                             "type": "integer",
                             "description": "Maximum number of search results to return.",
-                            "default": 5
+                            "default": 3
                         }
                     },
                     "required": ["query"]
@@ -201,6 +201,16 @@ Correct:
 
 Do not simulate tool calls in text.
 
+# Tool usage policy
+- Only use tools when necessary to answer the question
+- If the question can be answered directly, DO NOT use tools
+
+# Response policy (IMPORTANT)
+- If no tool is used, keep the answer concise and to the point
+- Avoid unnecessary explanations, examples, or repetition
+- **Prefer short**, direct answers unless the user explicitly asks for details
+- limit the answer to 1-2 sentences when possible, especially for factual questions
+
 # Language
 - Match the user's language
 """.strip()
@@ -222,9 +232,6 @@ Do not simulate tool calls in text.
     message = response["message"]
     messages.append(message)
     tool_calls = message.get("tool_calls", [])
-
-    print(f"\n[Model response]:\n{message}\n")
-    print(f"\n[Tool calls]:\n{tool_calls}\n")
 
     # 如果模型決定要呼叫工具，就執行
     if tool_calls:

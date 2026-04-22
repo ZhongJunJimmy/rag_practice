@@ -6,7 +6,7 @@ import re
 import numpy as np
 import time
 
-from libs.config import CHAT_MODEL, TOP_K_RETRIEVE, TOP_K_FINAL
+from libs.config import TOP_K_RETRIEVE, TOP_K_FINAL, MID_CHAT_MODEL
 from libs.ollama_client import client
 from .embedding import cosine_similarity, embed_text
 import time
@@ -43,7 +43,7 @@ def rerank(query: str, candidates: List[Dict[str, Any]], top_k: int = TOP_K_FINA
 """.strip()
         start_time = time.time()
         res = client.chat(
-            model=CHAT_MODEL,
+            model=MID_CHAT_MODEL,
             messages=[{"role": "user", "content": prompt}],
         )
         end_time = time.time()
