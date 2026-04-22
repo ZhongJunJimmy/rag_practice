@@ -5,15 +5,15 @@ import time
 from typing import Any, Dict, List
 
 import requests
-from datetime import datetime
 
 
-from libs.config import CHAT_MODEL
+from libs.config import CHAT_MODEL, MID_CHAT_MODEL
 from libs.ollama_client import client
+from services.retrieval import rerank
 SEARCH_TIMEOUT = 15
 
 
-def web_search(query: str, max_results: int = 3) -> Dict[str, Any]:
+def web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
     """
     使用 DuckDuckGo Instant Answer API + HTML fallback 做簡單搜尋。
     不依賴 Ollama 內建 web search。
@@ -44,9 +44,9 @@ def web_search(query: str, max_results: int = 3) -> Dict[str, Any]:
 
         if abstract_text:
             results.append({
-                "title": heading or query,
-                "url": abstract_url or "",
-                "snippet": abstract_text,
+                # "title": heading or query,
+                # "url": abstract_url or "",
+                "text": abstract_text,
             })
 
         related_topics = data.get("RelatedTopics", [])
@@ -54,17 +54,17 @@ def web_search(query: str, max_results: int = 3) -> Dict[str, Any]:
             if isinstance(item, dict):
                 if "Text" in item and "FirstURL" in item:
                     results.append({
-                        "title": item.get("Text", "")[:80],
-                        "url": item.get("FirstURL", ""),
-                        "snippet": item.get("Text", ""),
+                        # "title": item.get("Text", "")[:80],
+                        # "url": item.get("FirstURL", ""),
+                        "text": item.get("Text", ""),
                     })
                 elif "Topics" in item:
                     for sub in item["Topics"]:
                         if "Text" in sub and "FirstURL" in sub:
                             results.append({
-                                "title": sub.get("Text", "")[:80],
-                                "url": sub.get("FirstURL", ""),
-                                "snippet": sub.get("Text", ""),
+                                # "title": sub.get("Text", "")[:80],
+                                # "url": sub.get("FirstURL", ""),
+                                "text": sub.get("Text", ""),
                             })
 
         if results:
@@ -118,18 +118,17 @@ def web_search(query: str, max_results: int = 3) -> Dict[str, Any]:
 
         for m in pattern.finditer(html):
             results.append({
-                "title": strip_html(m.group("title")),
-                "url": strip_html(m.group("url")),
-                "snippet": strip_html(m.group("snippet")),
+                # "title": strip_html(m.group("title")),
+                # "url": strip_html(m.group("url")),
+                "text": strip_html(m.group("snippet")),
             })
             if len(results) >= max_results:
                 break
 
         return {
             "query": query,
-            "source": "duckduckgo_html",
+            # "source": "duckduckgo_html",
             "results": results[:max_results],
-            "warning": "HTML parsing may be fragile",
         }
 
     except Exception as e:
@@ -162,7 +161,7 @@ def build_tools() -> List[Dict[str, Any]]:
                         "max_results": {
                             "type": "integer",
                             "description": "Maximum number of search results to return.",
-                            "default": 3
+                            "default": 5
                         }
                     },
                     "required": ["query"]
@@ -184,7 +183,6 @@ def call_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
 
 def run_agent(user_question: str) -> str:
 
-
     system_prompt = """
 You are a tool-using assistant.
 
@@ -201,15 +199,11 @@ Correct:
 
 Do not simulate tool calls in text.
 
-# Tool usage policy
-- Only use tools when necessary to answer the question
-- If the question can be answered directly, DO NOT use tools
-
 # Response policy (IMPORTANT)
 - If no tool is used, keep the answer concise and to the point
 - Avoid unnecessary explanations, examples, or repetition
-- **Prefer short**, direct answers unless the user explicitly asks for details
-- limit the answer to 1-2 sentences when possible, especially for factual questions
+- Prefer short, direct answers unless the user explicitly asks for details
+- limit the answer to 2-3 sentences if possible, unless the question is complex or open-ended
 
 # Language
 - Match the user's language
@@ -240,15 +234,13 @@ Do not simulate tool calls in text.
             tool_name = func["name"]
             arguments = func.get("arguments", {})
 
-            print(f"\n[Calling tool: {tool_name} with arguments: {arguments}]\n")
-
             tool_result = call_tool(tool_name, arguments)
-            print(f"\n[Tool result for {tool_name}]:\n{json.dumps(tool_result, ensure_ascii=False, indent=2)}\n")
+            reranked = rerank(user_question, tool_result["results"], top_k=3)
             messages.append(
                 {
                     "role": "tool",
                     "name": tool_name,
-                    "content": json.dumps(tool_result, ensure_ascii=False),
+                    "content": json.dumps(reranked, ensure_ascii=False),
                 }
             )
 
@@ -261,31 +253,3 @@ Do not simulate tool calls in text.
 
     # 如果不需要工具，直接回傳第一次答案
     return message["content"]
-
-
-def main() -> None:
-    print(f"Using model: {CHAT_MODEL}")
-    print("Type 'exit' to quit.\n")
-
-    while True:
-        user_question = input("You: ").strip()
-        print(user_question)
-        now = datetime.now()
-        user_question = user_question+f" (asked at {now.strftime('%Y-%m-%d %H:%M:%S')})"
-        if not user_question:
-            continue
-        if user_question.lower() in {"exit", "quit"}:
-            break
-
-        start = time.time()
-        try:
-            answer = run_agent(user_question)
-            print(f"\nAssistant:\n{answer}\n")
-        except Exception as e:
-            print(f"\nError: {e}\n")
-        finally:
-            print(f"[elapsed: {time.time() - start:.2f}s]\n")
-
-
-if __name__ == "__main__":
-    main()

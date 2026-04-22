@@ -41,13 +41,10 @@ def rerank(query: str, candidates: List[Dict[str, Any]], top_k: int = TOP_K_FINA
 【文件片段】
 {item['text']}
 """.strip()
-        start_time = time.time()
         res = client.chat(
             model=MID_CHAT_MODEL,
             messages=[{"role": "user", "content": prompt}],
         )
-        end_time = time.time()
-        print(f"執行rerank時間: {end_time - start_time} 秒")
         raw = res["message"]["content"].strip()
 
         m = re.search(r"\d+", raw)
@@ -56,5 +53,4 @@ def rerank(query: str, candidates: List[Dict[str, Any]], top_k: int = TOP_K_FINA
         rescored.append({**item, "score": float(score)})
 
     rescored.sort(key=lambda x: x["score"], reverse=True)
-    print([x["score"] for x in rescored[:top_k]])
     return rescored[:top_k]
