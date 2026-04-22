@@ -132,7 +132,7 @@ def ask(req: AskRequest):
         return AskResponse(
             query=req.query,
             mode=req.mode,
-            search_query=search_queries[0],
+            search_query=req.query,
             retrieved=[],  # web search 沒有 chunk_id 等資訊，這裡先留空
             reranked=[],   # 同上
             answer=web_results,
