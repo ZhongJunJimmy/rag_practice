@@ -78,9 +78,10 @@ def health():
 
 @app.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest):
-    search_queries = build_search_query(req.query, req.mode)
 
     if current_mode == "chunk":
+
+        search_queries = build_search_query(req.query, req.mode)
         # 針對每個改寫後的查詢進行檢索並聚合結果
         all_retrieved = []
         for sq in search_queries:
@@ -125,7 +126,7 @@ def ask(req: AskRequest):
         )
     else:
         now = datetime.now()
-        user_question = "\n".join(search_queries)+f" (asked at {now.strftime('%Y-%m-%d %H:%M:%S')})"
+        user_question = req.query+f" (asked at {now.strftime('%Y-%m-%d %H:%M:%S')})"
 
         web_results = run_agent(user_question)
         return AskResponse(
