@@ -2,18 +2,21 @@ from __future__ import annotations
 
 import json
 import time
+import html
 from typing import Any, Dict, List
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
-
 from libs.config import CHAT_MODEL, MID_CHAT_MODEL
 from libs.ollama_client import client
+from libs.prompts import AGENT_SYSTEM_PROMPT
 from services.retrieval import rerank
+
 SEARCH_TIMEOUT = 15
+debug_mode = True
 
-
-def web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
+def web_search(query: str, max_results: int = 10) -> Dict[str, Any]:
     """
     使用 DuckDuckGo Instant Answer API + HTML fallback 做簡單搜尋。
     不依賴 Ollama 內建 web search。
@@ -39,13 +42,9 @@ def web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
         data = resp.json()
 
         abstract_text = data.get("AbstractText")
-        abstract_url = data.get("AbstractURL")
-        heading = data.get("Heading")
 
         if abstract_text:
             results.append({
-                # "title": heading or query,
-                # "url": abstract_url or "",
                 "text": abstract_text,
             })
 
@@ -54,16 +53,12 @@ def web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
             if isinstance(item, dict):
                 if "Text" in item and "FirstURL" in item:
                     results.append({
-                        # "title": item.get("Text", "")[:80],
-                        # "url": item.get("FirstURL", ""),
                         "text": item.get("Text", ""),
                     })
                 elif "Topics" in item:
                     for sub in item["Topics"]:
                         if "Text" in sub and "FirstURL" in sub:
                             results.append({
-                                # "title": sub.get("Text", "")[:80],
-                                # "url": sub.get("FirstURL", ""),
                                 "text": sub.get("Text", ""),
                             })
 
@@ -80,7 +75,6 @@ def web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
         api_error = None
 
     # fallback：用 DuckDuckGo HTML 搜尋頁做簡單解析
-    # 這種方式比較脆弱，但比完全不能用好
     try:
         html_url = "https://html.duckduckgo.com/html/"
         resp = requests.post(
@@ -93,10 +87,8 @@ def web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
             timeout=SEARCH_TIMEOUT,
         )
         resp.raise_for_status()
-        html = resp.text
+        html_content = resp.text
 
-        # 非正式 parser，僅做簡單字串切割
-        # 實務上可改用 BeautifulSoup
         import re
 
         pattern = re.compile(
@@ -106,20 +98,13 @@ def web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
         )
 
         def strip_html(text: str) -> str:
+            # Remove HTML tags
             text = re.sub(r"<.*?>", "", text)
-            return (
-                text.replace("&amp;", "&")
-                .replace("&quot;", '"')
-                .replace("&#39;", "'")
-                .replace("&lt;", "<")
-                .replace("&gt;", ">")
-                .strip()
-            )
+            # Use standard library to unescape HTML entities (& etc.)
+            return html.unescape(text).strip()
 
-        for m in pattern.finditer(html):
+        for m in pattern.finditer(html_content):
             results.append({
-                # "title": strip_html(m.group("title")),
-                # "url": strip_html(m.group("url")),
                 "text": strip_html(m.group("snippet")),
             })
             if len(results) >= max_results:
@@ -127,7 +112,6 @@ def web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
 
         return {
             "query": query,
-            # "source": "duckduckgo_html",
             "results": results[:max_results],
         }
 
@@ -161,7 +145,7 @@ def build_tools() -> List[Dict[str, Any]]:
                         "max_results": {
                             "type": "integer",
                             "description": "Maximum number of search results to return.",
-                            "default": 5
+                            "default": 10
                         }
                     },
                     "required": ["query"]
@@ -180,84 +164,80 @@ def call_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
 
     raise ValueError(f"Unknown tool: {tool_name}")
 
+def trim_context(messages: List[Dict[str, Any]], max_tool_content_len: int = 4000) -> List[Dict[str, Any]]:
+    """
+    Simple context management: trim tool results if they are too long to prevent token overflow.
+    """
+    for msg in messages:
+        if msg["role"] == "tool" and len(msg["content"]) > max_tool_content_len:
+            msg["content"] = msg["content"][:max_tool_content_len] + "... [truncated]"
+    return messages
 
 def run_agent(user_question: str) -> str:
-
-    system_prompt = """
-You are a tool-using assistant.
-
-When a tool is needed:
-- You MUST call the tool using the provided tool calling interface
-- You MUST NOT write JSON manually
-- You MUST NOT include tool_calls in the message content
-
-Incorrect:
-{"tool_calls": [...]}
-
-Correct:
-(use the tool_calls field provided by the system)
-
-Do not simulate tool calls in text.
-
-# Tool usage policy (IMPORTANT)
-- You MUST use tools if the question requires:
-  - up-to-date information (news, prices, weather, current events)
-  - factual data you are not highly confident about
-  - external or real-world knowledge not guaranteed to be in your training data
-- If there is any uncertainty, prefer using a tool instead of guessing
-- DO NOT answer from memory when accuracy is important
-
-# Response policy (IMPORTANT)
-- If no tool is used, keep the answer concise and to the point
-- Avoid unnecessary explanations, examples, or repetition
-- Prefer short, direct answers unless the user explicitly asks for details
-- Limit the answer to 2-3 sentences if possible, unless the question is complex
-
-# Language
-- Match the user's language
-""".strip()
-
     messages: List[Dict[str, Any]] = [
-        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": AGENT_SYSTEM_PROMPT},
         {"role": "user", "content": user_question},
     ]
 
     tools = build_tools()
+    iterations = 0
+    max_iterations = 3
 
-    # 第一次讓模型判斷是否要呼叫工具
-    response = client.chat(
-        model=CHAT_MODEL,
-        messages=messages,
-        tools=tools,
-    )
+    while iterations < max_iterations:
+        response = client.chat(
+            model=CHAT_MODEL,
+            messages=messages,
+            tools=tools,
+        )
 
-    message = response["message"]
-    messages.append(message)
-    tool_calls = message.get("tool_calls", [])
+        message = response["message"]
+        messages.append(message)
+        tool_calls = message.get("tool_calls", [])
 
-    # 如果模型決定要呼叫工具，就執行
-    if tool_calls:
-        for tool_call in tool_calls:
+        if not tool_calls:
+            return message["content"]
+
+        # Parallel Tool Execution
+        def execute_tool_call(tool_call):
             func = tool_call["function"]
             tool_name = func["name"]
             arguments = func.get("arguments", {})
+            try:
+                result = call_tool(tool_name, arguments)
+                # Apply reranking for web_search
+                if tool_name == "web_search" and "results" in result:
+                    reranked = rerank(user_question, result["results"], top_k=5)
+                    return tool_name, reranked
+                return tool_name, result
+            except Exception as e:
+                return tool_name, {"error": str(e)}
 
-            tool_result = call_tool(tool_name, arguments)
-            reranked = rerank(user_question, tool_result["results"], top_k=3)
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(execute_tool_call, tc) for tc in tool_calls]
+            results = [f.result() for f in futures]
+
+        for tool_name, content in results:
+            if debug_mode:
+                print(f"[Tool result for {tool_name}: {json.dumps(content, ensure_ascii=False)}]")
+            
             messages.append(
                 {
                     "role": "tool",
                     "name": tool_name,
-                    "content": json.dumps(reranked, ensure_ascii=False),
+                    "content": json.dumps(content, ensure_ascii=False),
                 }
             )
+        
+        # Context Management
+        messages = trim_context(messages)
+        
+        iterations += 1
+        if debug_mode:
+            print(f"[Iteration {iterations}/{max_iterations} complete]")
 
-        # 再呼叫一次模型，讓它根據 tool 結果回答
-        final_response = client.chat(
-            model=CHAT_MODEL,
-            messages=messages,
-        )
-        return final_response["message"]["content"]
-
-    # 如果不需要工具，直接回傳第一次答案
-    return message["content"]
+    # Final response force summary
+    final_response = client.chat(
+        model=CHAT_MODEL,
+        messages=messages + [{"role": "system", "content": "Please provide the final answer based on the information gathered. Do not call more tools."}],
+    )
+    return final_response["message"]["content"]
