@@ -14,7 +14,7 @@ from libs.prompts import AGENT_SYSTEM_PROMPT
 from services.retrieval import rerank
 
 SEARCH_TIMEOUT = 15
-debug_mode = True
+debug_mode = False
 
 def web_search(query: str, max_results: int = 10) -> Dict[str, Any]:
     """
@@ -156,7 +156,8 @@ def build_tools() -> List[Dict[str, Any]]:
 
 
 def call_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-    print(f"[Calling tool: {tool_name} with arguments: {arguments}]")
+    if debug_mode:
+        print(f"[Calling tool: {tool_name} with arguments: {arguments}]")
     if tool_name == "web_search":
         query = arguments["query"]
         max_results = arguments.get("max_results", 5)
@@ -171,6 +172,14 @@ def trim_context(messages: List[Dict[str, Any]], max_tool_content_len: int = 400
     for msg in messages:
         if msg["role"] == "tool" and len(msg["content"]) > max_tool_content_len:
             msg["content"] = msg["content"][:max_tool_content_len] + "... [truncated]"
+    
+    # 如果總訊息長度過長，移除最早的幾筆對話（保留 system prompt）
+    total_len = sum(len(m.get("content", "")) for m in messages)
+    if total_len > 20000 and len(messages) > 2:
+        # 保留第一條 system prompt，移除第二條 (通常是最初的 user question 或 early history)
+        # 這裡簡單處理：如果太長，移除索引 1 的訊息
+        messages.pop(1)
+        
     return messages
 
 def run_agent(user_question: str) -> str:
@@ -184,13 +193,38 @@ def run_agent(user_question: str) -> str:
     max_iterations = 3
 
     while iterations < max_iterations:
+        if debug_mode:
+            print(f"[Iteration {iterations+1} - Sending messages to model: {json.dumps(messages, ensure_ascii=False)}]")
         response = client.chat(
             model=CHAT_MODEL,
             messages=messages,
             tools=tools,
+            options={"num_ctx": 8192},
         )
 
+        if debug_mode:
+            print(f"[Model response: {response}]")  
+
+        # 確保 message 及其內部的 tool_calls 都是字典格式，避免 JSON 序列化錯誤
         message = response["message"]
+        if not isinstance(message, dict):
+            msg_dict = {
+                "role": getattr(message, "role", "assistant"),
+                "content": getattr(message, "content", ""),
+                "tool_calls": getattr(message, "tool_calls", [])
+            }
+            # 遞迴轉換 tool_calls 列表中的每一個 ToolCall 物件為字典
+            if msg_dict["tool_calls"]:
+                msg_dict["tool_calls"] = [
+                    tc if isinstance(tc, dict) else {
+                        "function": {
+                            "name": getattr(tc.function, "name", ""),
+                            "arguments": getattr(tc.function, "arguments", {})
+                        }
+                    }
+                    for tc in msg_dict["tool_calls"]
+                ]
+            message = msg_dict
         messages.append(message)
         tool_calls = message.get("tool_calls", [])
 
@@ -217,8 +251,6 @@ def run_agent(user_question: str) -> str:
             results = [f.result() for f in futures]
 
         for tool_name, content in results:
-            if debug_mode:
-                print(f"[Tool result for {tool_name}: {json.dumps(content, ensure_ascii=False)}]")
             
             messages.append(
                 {
@@ -239,5 +271,6 @@ def run_agent(user_question: str) -> str:
     final_response = client.chat(
         model=CHAT_MODEL,
         messages=messages + [{"role": "system", "content": "Please provide the final answer based on the information gathered. Do not call more tools."}],
+        options={"num_ctx": 8192},
     )
     return final_response["message"]["content"]

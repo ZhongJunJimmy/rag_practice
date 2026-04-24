@@ -35,8 +35,16 @@ def build_answer_prompt(query: str, docs: List[Dict[str, Any]]) -> str:
 def answer_question(query: str, docs: List[Dict[str, Any]]) -> str:
     """根據檢索到的文件生成答案"""
     prompt = build_answer_prompt(query, docs)
+    
+    # 簡單的長度檢查，避免 prompt 過長 (例如限制在 12000 字左右)
+    if len(prompt) > 12000:
+        # 如果太長，嘗試減少參考資料數量
+        docs = docs[:max(1, len(docs)//2)]
+        prompt = build_answer_prompt(query, docs)
+
     res = client.chat(
         model=CHAT_MODEL,
         messages=[{"role": "user", "content": prompt}],
+        options={"num_ctx": 8192},
     )
     return res["message"]["content"]
