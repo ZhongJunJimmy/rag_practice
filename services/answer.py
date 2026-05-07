@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 
 from libs.config import CHAT_MODEL
 from libs.ollama_client import client
+from config.prompts import ANSWER_PROMPT
 
 
 def build_answer_prompt(query: str, docs: List[Dict[str, Any]]) -> str:
@@ -16,20 +17,7 @@ def build_answer_prompt(query: str, docs: List[Dict[str, Any]]) -> str:
         ]
     )
 
-    return f"""
-你是一個根據參考資料回答問題的助理。
-規則：
-1. 只能根據參考資料回答
-2. 若資料不足，明確回答「資料不足，無法確認」
-3. 不要自行補充參考資料沒有的事實
-4. 使用繁體中文
-
-【參考資料】
-{context}
-
-【問題】
-{query}
-""".strip()
+    return ANSWER_PROMPT.format(context=context, query=query)
 
 
 def answer_question(query: str, docs: List[Dict[str, Any]]) -> str:

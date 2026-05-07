@@ -8,6 +8,7 @@ import time
 
 from libs.config import TOP_K_RETRIEVE, TOP_K_FINAL, MID_CHAT_MODEL
 from libs.ollama_client import client
+from config.prompts import RERANK_PROMPT
 from .embedding import cosine_similarity, embed_text
 import time
 
@@ -30,17 +31,7 @@ def rerank(query: str, candidates: List[Dict[str, Any]], top_k: int = TOP_K_FINA
     rescored = []
 
     for item in candidates:
-        prompt = f"""
-你是文件檢索重排序器。
-請評估「問題」與「文件片段」的相關性，輸出 0 到 10 的整數分數即可。
-不要解釋，不要輸出其他文字。
-
-【問題】
-{query}
-
-【文件片段】
-{item['text']}
-""".strip()
+        prompt = RERANK_PROMPT.format(query=query, text=item['text'])
         res = client.chat(
             model=MID_CHAT_MODEL,
             messages=[{"role": "user", "content": prompt}],
